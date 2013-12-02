@@ -18,32 +18,32 @@ class Daemonize(object):
     - action: your custom function which will be executed after daemonization.
     - keep_fds: optional list of fds which should not be closed.
     """
-    def __init__(self, app, pid, action, keep_fds=None):
+    def __init__(self, app, pid, action, keep_fds=[], logger=None):
         self.app = app
         self.pid = pid
         self.action = action
-        if keep_fds:
-            self.keep_fds = keep_fds
-        else:
-            self.keep_fds = []
+        self.keep_fds = keep_fds
         # Initialize logging.
-        self.logger = logging.getLogger(self.app)
-        self.logger.setLevel(logging.DEBUG)
-        # Display log messages only on defined handlers.
-        self.logger.propagate = False
-        # It will work on OS X and Linux. No FreeBSD support, guys, I don't want to import re here
-        # to parse your peculiar platform string.
-        if sys.platform == "darwin":
-            syslog_address = "/var/run/syslog"
+        if logger:
+            self.logger = logger
         else:
-            syslog_address = "/dev/log"
-        syslog = handlers.SysLogHandler(syslog_address)
-        syslog.setLevel(logging.INFO)
-        # Try to mimic to normal syslog messages.
-        formatter = logging.Formatter("%(asctime)s %(name)s: %(message)s",
-                                      "%b %e %H:%M:%S")
-        syslog.setFormatter(formatter)
-        self.logger.addHandler(syslog)
+            self.logger = logging.getLogger(self.app)
+            self.logger.setLevel(logging.DEBUG)
+            # Display log messages only on defined handlers.
+            self.logger.propagate = False
+            # It will work on OS X and Linux. No FreeBSD support, guys, I don't want to import re here
+            # to parse your peculiar platform string.
+            if sys.platform == "darwin":
+                syslog_address = "/var/run/syslog"
+            else:
+                syslog_address = "/dev/log"
+            syslog = handlers.SysLogHandler(syslog_address)
+            syslog.setLevel(logging.INFO)
+            # Try to mimic to normal syslog messages.
+            formatter = logging.Formatter("%(asctime)s %(name)s: %(message)s",
+                                          "%b %e %H:%M:%S")
+            syslog.setFormatter(formatter)
+            self.logger.addHandler(syslog)
 
     def sigterm(self, signum, frame):
         """ sigterm method
@@ -83,12 +83,13 @@ class Daemonize(object):
             # than /dev/null.
             devnull = os.devnull
 
-        for fd in range(resource.getrlimit(resource.RLIMIT_NOFILE)[0]):
-            if fd not in self.keep_fds:
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
+        if self.keep_fds:
+            for fd in range(resource.getrlimit(resource.RLIMIT_NOFILE)[0]):
+                if fd not in self.keep_fds:
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
 
         os.open(devnull, os.O_RDWR)
         os.dup(0)
