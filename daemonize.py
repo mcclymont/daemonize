@@ -20,15 +20,18 @@ class Daemonize(object):
     - close_fds: optional list of fds or file paths which should be closed. (not to be
       used with keep_fds). If close_fds is specified, only those fds will be closed. 
       Otherwise, all open files will be closed (except ones specified by keep_fds)
+      To close nothing, set close_fds to an empty list. 
+      Note - stdin, stdout and stderr will always be closed and reopened to /dev/null.
     """
-    def __init__(self, app, pid, action, logger=None, keep_fds=[], close_fds=[]):
+    def __init__(self, app, pid, action, logger=None, keep_fds=None, close_fds=None):
         self.app = app
         self.pid = pid
         self.action = action
         self.keep_fds = keep_fds if keep_fds else []
         self.close_fds = close_fds if close_fds else []
+        self.automatic_close = close_fds == None
         
-        if len(self.keep_fds) > 0 and len(self.close_fds) > 0:
+        if keep_fds != None and close_fds != None:
             raise ValueError("keep_fds and close_fds are mutually exclusive")
         
         # Initialize logging.
@@ -46,7 +49,7 @@ class Daemonize(object):
             else:
                 syslog_address = "/dev/log"
             syslog = handlers.SysLogHandler(syslog_address)
-            syslog.setLevel(logging.INFO)
+            syslog.setLevel(logging.DEBUG)
             # Try to mimic to normal syslog messages.
             formatter = logging.Formatter("%(asctime)s %(name)s: %(message)s",
                                           "%b %e %H:%M:%S")
@@ -112,31 +115,26 @@ class Daemonize(object):
             # Python has set os.devnull on this system, use it instead as it might be different
             # than /dev/null.
             devnull = os.devnull
-
-
-        # If the user supplied values to close_fds, then we will only close those.
-        # Else, we will 'automatically' close all available fds.
-        # Need to check here because clean_list might remove specified paths if they 
-        # don't exist and bring the lists length to 0 (when the user was still 
-        # intending for not every fd to be closed automatically
-        automatic_close = len(self.close_fds) == 0
-    
+        
         self.clean_list(self.close_fds)
         self.clean_list(self.keep_fds)
         self.closed = set()
-    
-        if automatic_close:
+
+        if self.automatic_close:
             all_fds = range(resource.getrlimit(resource.RLIMIT_NOFILE)[0])
-            self.close_fds = set([fd for fd in all_fds if fd not in self.keep_fds])
-    
-        for fd in self.close_fds:
-            try:
-                os.close(fd)
-                self.closed.add(fd)
-                self.logger.info("successfully closed " + str(fd))
-            except OSError:
-                pass
+            self.close_fds = [fd for fd in all_fds if fd not in self.keep_fds]
         
+        self.close_fds += [0,1,2] # Make sure stdin, stdout, stderr always closed
+
+        for fd in self.close_fds:
+            if fd not in self.closed:
+                try:
+                    os.close(fd)
+                    self.closed.add(fd)
+                    self.logger.debug("Successfully closed fd " + str(fd))
+                except OSError:
+                    pass
+    
         # All applications must have an open connection to stdin, stdout and stderr
         # even though by design daemons should not actually write to these places.
         # Therefore, if we closed their respective fds, reopen to /dev/null.
