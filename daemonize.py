@@ -29,7 +29,7 @@ class Daemonize(object):
         self.close_fds = close_fds if close_fds else []
         
         if len(self.keep_fds) > 0 and len(self.close_fds) > 0:
-            raise ArgumentError("keep_fds and close_fds are mutually exclusive")
+            raise ValueError("keep_fds and close_fds are mutually exclusive")
         
         # Initialize logging.
         if logger:
