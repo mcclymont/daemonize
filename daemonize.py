@@ -22,6 +22,7 @@ class Daemonize(object):
       Otherwise, all open files will be closed (except ones specified by keep_fds)
       To close nothing, set close_fds to an empty list. 
       Note - stdin, stdout and stderr will always be closed and reopened to /dev/null.
+      Note - file path lookups are only usable on linux (not OSX)
     """
     def __init__(self, app, pid, action, logger=None, keep_fds=None, close_fds=None):
         self.app = app
@@ -55,16 +56,23 @@ class Daemonize(object):
                                           "%b %e %H:%M:%S")
             syslog.setFormatter(formatter)
             self.logger.addHandler(syslog)
-            
+            self.keep_fds += [syslog.socket.fileno()] # don't close the socket for this logger
+        
         self.file_mapping = {}
-        for fd in os.listdir('/proc/self/fd'):
-            fd = int(fd)
-            try:
-                fdpath = os.readlink('/proc/self/fd/%s' % fd)
-                if fdpath != '/proc/self/fd':
-                    self.file_mapping[fdpath] = fd
-            except:
-                pass
+        if sys.platform == "darwin":
+            close_strings = [x for x in self.close_fds if type(x) is str]
+            keep_strings = [x for x in self.keep_fds if type(x) is str]
+            if len(close_strings) > 0 or len(keep_strings) > 0:
+                raise ValueError("File path lookups are only supported on linux")
+        else:
+            for fd in os.listdir('/proc/self/fd'):
+                fd = int(fd)
+                try:
+                    fdpath = os.readlink('/proc/self/fd/%s' % fd)
+                    if fdpath != '/proc/self/fd':
+                        self.file_mapping[fdpath] = fd
+                except:
+                    pass
 
     def sigterm(self, signum, frame):
         """ sigterm method
