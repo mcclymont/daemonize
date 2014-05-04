@@ -56,6 +56,7 @@ class Daemonize(object):
                                           "%b %e %H:%M:%S")
             syslog.setFormatter(formatter)
             self.logger.addHandler(syslog)
+            self.keep_fds += [syslog.socket.fileno()] # don't close the socket for this logger
         
         self.file_mapping = {}
         if sys.platform == "darwin":
